@@ -5,6 +5,9 @@ const helpers = require('./utils/helpers');
 const logger = require('./utils/logger');
 const config = require('./config/environment');
 
+// Iniciar servidor web
+const server = require('./server');
+
 function printBanner() {
   console.log(`
 ╔═══════════════════════════════════════════════════════╗

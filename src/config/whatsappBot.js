@@ -3,6 +3,7 @@ const qrcodeTerminal = require('qrcode-terminal');
 const qrcode = require('qrcode');
 const path = require('path');
 const fs = require('fs');
+const axios = require('axios');
 const config = require('./environment');
 const logger = require('../utils/logger');
 
@@ -28,7 +29,14 @@ class WhatsAppBotConfig {
     this.client.on('qr', async (qr) => {
       this.currentQR = qr;
       logger.info('📱 QR CODE GERADO - Acesse http://localhost:3000 para escanear!');
-      
+
+      // Enviar QR Code para servidor web
+      try {
+        await axios.post('http://localhost:3000/api/qr', { qr });
+      } catch (e) {
+        // Ignora erro se servidor não estiver rodando
+      }
+
       // Salvar QR Code como imagem PNG
       const qrPath = path.join(__dirname, '../../qrcode.png');
       await qrcode.toFile(qrPath, qr);
@@ -36,18 +44,37 @@ class WhatsAppBotConfig {
       logger.info('🔗 http://localhost:3000 - Escaneie o QR Code no navegador!');
     });
 
-    this.client.on('ready', () => {
-      logger.success('✅ WhatsApp Bot conectado!');
+    this.client.on('ready', async () => {
       this.isReady = true;
+      logger.success('✅ WhatsApp Bot conectado!');
+
+      // Enviar status para servidor web
+      try {
+        await axios.post('http://localhost:3000/api/status', { status: '✅ WhatsApp Bot conectado!' });
+      } catch (e) {
+        // Ignora erro se servidor não estiver rodando
+      }
     });
 
-    this.client.on('disconnected', () => {
-      logger.warn('⚠️  WhatsApp Bot desconectado');
+    this.client.on('disconnected', async () => {
       this.isReady = false;
+      logger.warn('⚠️  WhatsApp Bot desconectado');
+
+      try {
+        await axios.post('http://localhost:3000/api/status', { status: '⚠️  WhatsApp Bot desconectado' });
+      } catch (e) {
+        // Ignora erro se servidor não estiver rodando
+      }
     });
 
-    this.client.on('error', (error) => {
+    this.client.on('error', async (error) => {
       logger.error(`❌ Erro WhatsApp: ${error.message}`);
+
+      try {
+        await axios.post('http://localhost:3000/api/status', { status: `❌ Erro: ${error.message}` });
+      } catch (e) {
+        // Ignora erro se servidor não estiver rodando
+      }
     });
 
     this.client.initialize();
