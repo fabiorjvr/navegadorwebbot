@@ -3,9 +3,17 @@ const qrcodeTerminal = require('qrcode-terminal');
 const qrcode = require('qrcode');
 const path = require('path');
 const fs = require('fs');
+const os = require('os');
 const axios = require('axios');
 const config = require('./environment');
 const logger = require('../utils/logger');
+
+// Diretório temporário dinâmico para evitar locks de sessão
+const getTempSessionDir = () => {
+  const tempDir = path.join(os.tmpdir(), `wwebjs-session-${config.whatsapp.sessionName}-${Date.now()}`);
+  logger.info(`📁 Usando diretório de sessão temporário: ${tempDir}`);
+  return tempDir;
+};
 
 class WhatsAppBotConfig {
   constructor() {
@@ -18,11 +26,20 @@ class WhatsAppBotConfig {
   initialize() {
     logger.info('🔄 Inicializando WhatsApp Bot...');
 
+    const sessionDir = getTempSessionDir();
+
     this.client = new Client({
-      authStrategy: new LocalAuth({ clientId: config.whatsapp.sessionName }),
+      authStrategy: new LocalAuth({ 
+        clientId: config.whatsapp.sessionName,
+        dataPath: sessionDir  // Usar diretório temporário dinâmico
+      }),
       puppeteer: {
         headless: true,
-        args: ['--no-sandbox', '--disable-setuid-sandbox']
+        args: [
+          '--no-sandbox', 
+          '--disable-setuid-sandbox',
+          `--user-data-dir=${sessionDir}`
+        ]
       }
     });
 
@@ -74,6 +91,12 @@ class WhatsAppBotConfig {
         await axios.post('http://localhost:3000/api/status', { status: `❌ Erro: ${error.message}` });
       } catch (e) {
         // Ignora erro se servidor não estiver rodando
+      }
+
+      // Se o erro for de sessão bloqueada, tentar novamente com novo diretório
+      if (error.message.includes('browser is already running')) {
+        logger.warn('⚠️  Sessão bloqueada detectada, regenerando diretório...');
+        // O cliente será recriado na próxima inicialização
       }
     });
 
