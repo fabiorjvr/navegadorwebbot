@@ -1,0 +1,968 @@
+Tudo em Um Prompt para OpenCode
+Vou criar um script único que você copia e manda o OpenCode executar no Git Bash.
+
+📋 PROMPT COMPLETO PARA OPENCODE
+Cole isso todo de uma vez no OpenCode (ou no Git Bash):
+
+bash
+# ============================================
+# SCRIPT: Gerar todos os arquivos do projeto
+# ============================================
+
+# 1. Criar arquivo .env
+cat > .env << 'EOF'
+# Configurações Agent-Browser
+AGENT_BROWSER_TIMEOUT=10000
+AGENT_BROWSER_HEADLESS=false
+
+# Configurações WhatsApp
+WHATSAPP_SESSION_NAME=bot-session
+WHATSAPP_DEBUG=true
+
+# Configurações Gerais
+NODE_ENV=development
+LOG_LEVEL=info
+EOF
+
+echo "✅ .env criado"
+
+# 2. Criar arquivo .gitignore
+cat > .gitignore << 'EOF'
+node_modules/
+.env
+.env.local
+*.png
+*.jpg
+session.json
+*.log
+logs/
+screenshots/
+.DS_Store
+package-lock.json
+EOF
+
+echo "✅ .gitignore criado"
+
+# 3. Criar arquivo package.json
+cat > package.json << 'EOF'
+{
+  "name": "navegador-web",
+  "version": "1.0.0",
+  "description": "Bot WhatsApp com Agent-Browser para scraping automático",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node src/index.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "whatsapp",
+    "bot",
+    "agent-browser",
+    "scraping",
+    "fintech"
+  ],
+  "author": "Fábio",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "express": "^4.18.2",
+    "dotenv": "^16.3.1",
+    "axios": "^1.6.0",
+    "whatsapp-web.js": "^1.27.0",
+    "qrcode-terminal": "^0.12.0"
+  }
+}
+EOF
+
+echo "✅ package.json criado"
+
+# 4. Criar src/config/environment.js
+cat > src/config/environment.js << 'EOF'
+require('dotenv').config();
+
+module.exports = {
+  agentBrowser: {
+    timeout: parseInt(process.env.AGENT_BROWSER_TIMEOUT) || 10000,
+    headless: process.env.AGENT_BROWSER_HEADLESS === 'true'
+  },
+
+  whatsapp: {
+    sessionName: process.env.WHATSAPP_SESSION_NAME || 'bot-session',
+    debug: process.env.WHATSAPP_DEBUG === 'true'
+  },
+
+  app: {
+    environment: process.env.NODE_ENV || 'development',
+    logLevel: process.env.LOG_LEVEL || 'info'
+  },
+
+  paths: {
+    screenshots: './screenshots',
+    logs: './logs',
+    src: './src'
+  }
+};
+EOF
+
+echo "✅ src/config/environment.js criado"
+
+# 5. Criar src/config/agentBrowser.js
+cat > src/config/agentBrowser.js << 'EOF'
+const { execSync } = require('child_process');
+const config = require('./environment');
+const logger = require('../utils/logger');
+
+class AgentBrowserConfig {
+  constructor() {
+    this.timeout = config.agentBrowser.timeout;
+    this.sessions = {};
+  }
+
+  checkInstallation() {
+    try {
+      const version = execSync('agent-browser --version', { encoding: 'utf8' });
+      logger.info(`✅ agent-browser instalado: ${version.trim()}`);
+      return true;
+    } catch (error) {
+      logger.error('❌ agent-browser não está instalado!');
+      logger.error('Execute: npm install -g agent-browser');
+      return false;
+    }
+  }
+
+  executeCommand(command, sessionName = 'default') {
+    try {
+      const fullCommand = sessionName && sessionName !== 'default'
+        ? `${command} --session=${sessionName}`
+        : command;
+
+      logger.debug(`⚡ Executando: ${fullCommand}`);
+      const result = execSync(fullCommand, { 
+        encoding: 'utf8',
+        timeout: this.timeout 
+      });
+      
+      return result.trim();
+    } catch (error) {
+      logger.error(`❌ Erro ao executar comando: ${error.message}`);
+      throw error;
+    }
+  }
+
+  openSite(url, sessionName = 'default') {
+    logger.info(`🌐 Abrindo: ${url}`);
+    return this.executeCommand(`agent-browser open "${url}"`, sessionName);
+  }
+
+  takeScreenshot(filename, sessionName = 'default') {
+    logger.info(`📸 Capturando: ${filename}`);
+    return this.executeCommand(`agent-browser screenshot "${filename}"`, sessionName);
+  }
+
+  getSnapshot(sessionName = 'default') {
+    logger.debug('📋 Obtendo snapshot...');
+    const result = this.executeCommand('agent-browser snapshot -i', sessionName);
+    return result;
+  }
+
+  typeText(inputRef, text, sessionName = 'default') {
+    logger.info(`✍️  Digitando em ${inputRef}: ${text.substring(0, 50)}...`);
+    return this.executeCommand(`agent-browser type ${inputRef} "${text}"`, sessionName);
+  }
+
+  clickElement(ref, sessionName = 'default') {
+    logger.info(`🖱️  Clicando em: ${ref}`);
+    return this.executeCommand(`agent-browser click ${ref}`, sessionName);
+  }
+
+  pressKey(key, sessionName = 'default') {
+    logger.info(`⌨️  Pressionando: ${key}`);
+    return this.executeCommand(`agent-browser key "${key}"`, sessionName);
+  }
+
+  closeBrowser(sessionName = 'default') {
+    logger.info(`🔴 Fechando navegador: ${sessionName}`);
+    return this.executeCommand('agent-browser close', sessionName);
+  }
+
+  wait(ms, sessionName = 'default') {
+    logger.debug(`⏳ Aguardando ${ms}ms...`);
+    return this.executeCommand(`agent-browser wait ${ms}`, sessionName);
+  }
+}
+
+module.exports = new AgentBrowserConfig();
+EOF
+
+echo "✅ src/config/agentBrowser.js criado"
+
+# 6. Criar src/config/whatsappBot.js
+cat > src/config/whatsappBot.js << 'EOF'
+const { Client, LocalAuth, MessageMedia } = require('whatsapp-web.js');
+const qrcode = require('qrcode-terminal');
+const config = require('./environment');
+const logger = require('../utils/logger');
+
+class WhatsAppBotConfig {
+  constructor() {
+    this.client = null;
+    this.isReady = false;
+  }
+
+  initialize() {
+    logger.info('🔄 Inicializando WhatsApp Bot...');
+
+    this.client = new Client({
+      authStrategy: new LocalAuth({ clientId: config.whatsapp.sessionName }),
+      puppeteer: {
+        headless: true,
+        args: ['--no-sandbox', '--disable-setuid-sandbox']
+      }
+    });
+
+    this.client.on('qr', (qr) => {
+      logger.info('📱 QR CODE GERADO - Escaneie com seu telefone:');
+      qrcode.generate(qr, { small: true });
+    });
+
+    this.client.on('ready', () => {
+      logger.success('✅ WhatsApp Bot conectado!');
+      this.isReady = true;
+    });
+
+    this.client.on('disconnected', () => {
+      logger.warn('⚠️  WhatsApp Bot desconectado');
+      this.isReady = false;
+    });
+
+    this.client.on('error', (error) => {
+      logger.error(`❌ Erro WhatsApp: ${error.message}`);
+    });
+
+    this.client.initialize();
+    return this.client;
+  }
+
+  async waitForReady() {
+    return new Promise((resolve) => {
+      if (this.isReady) {
+        resolve();
+        return;
+      }
+
+      const interval = setInterval(() => {
+        if (this.isReady) {
+          clearInterval(interval);
+          resolve();
+        }
+      }, 1000);
+    });
+  }
+
+  async sendMessage(chatId, text) {
+    try {
+      await this.waitForReady();
+      logger.info(`💬 Enviando mensagem para: ${chatId}`);
+      await this.client.sendMessage(chatId, text);
+      logger.success('✅ Mensagem enviada');
+    } catch (error) {
+      logger.error(`❌ Erro ao enviar: ${error.message}`);
+    }
+  }
+
+  async sendFile(chatId, filepath, caption = '') {
+    try {
+      await this.waitForReady();
+      logger.info(`📎 Enviando arquivo: ${filepath}`);
+      const media = MessageMedia.fromFilePath(filepath);
+      await this.client.sendMessage(chatId, media, { caption });
+      logger.success('✅ Arquivo enviado');
+    } catch (error) {
+      logger.error(`❌ Erro ao enviar arquivo: ${error.message}`);
+    }
+  }
+
+  async replyMessage(message, text) {
+    try {
+      logger.info('↩️  Respondendo mensagem...');
+      await message.reply(text);
+      logger.success('✅ Resposta enviada');
+    } catch (error) {
+      logger.error(`❌ Erro ao responder: ${error.message}`);
+    }
+  }
+}
+
+module.exports = new WhatsAppBotConfig();
+EOF
+
+echo "✅ src/config/whatsappBot.js criado"
+
+# 7. Criar src/utils/logger.js
+cat > src/utils/logger.js << 'EOF'
+const config = require('../config/environment');
+
+class Logger {
+  log(level, message, data = '') {
+    const timestamp = new Date().toLocaleTimeString('pt-BR');
+    const prefix = `[${timestamp}] [${level}]`;
+    
+    if (data) {
+      console.log(`${prefix} ${message}`, data);
+    } else {
+      console.log(`${prefix} ${message}`);
+    }
+  }
+
+  info(message, data) {
+    this.log('INFO', message, data);
+  }
+
+  success(message, data) {
+    console.log(`\x1b[32m[✓ SUCCESS]\x1b[0m ${message}`, data || '');
+  }
+
+  warn(message, data) {
+    console.log(`\x1b[33m[⚠ WARN]\x1b[0m ${message}`, data || '');
+  }
+
+  error(message, data) {
+    console.log(`\x1b[31m[✗ ERROR]\x1b[0m ${message}`, data || '');
+  }
+
+  debug(message, data) {
+    if (config.app.logLevel === 'debug') {
+      console.log(`\x1b[36m[DEBUG]\x1b[0m ${message}`, data || '');
+    }
+  }
+}
+
+module.exports = new Logger();
+EOF
+
+echo "✅ src/utils/logger.js criado"
+
+# 8. Criar src/utils/helpers.js
+cat > src/utils/helpers.js << 'EOF'
+const fs = require('fs');
+const path = require('path');
+const logger = require('./logger');
+
+class Helpers {
+  ensureDir(dirPath) {
+    if (!fs.existsSync(dirPath)) {
+      fs.mkdirSync(dirPath, { recursive: true });
+      logger.info(`📁 Pasta criada: ${dirPath}`);
+    }
+  }
+
+  extractPrice(text) {
+    const priceRegex = /R\$\s*[\d.,]+/gi;
+    const matches = text.match(priceRegex);
+    if (matches && matches.length > 0) {
+      return matches[0];
+    }
+    return null;
+  }
+
+  formatCurrency(value) {
+    return new Intl.NumberFormat('pt-BR', {
+      style: 'currency',
+      currency: 'BRL'
+    }).format(value);
+  }
+
+  delay(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+  }
+
+  sanitizeFilename(filename) {
+    return filename
+      .replace(/[^a-z0-9]/gi, '_')
+      .toLowerCase()
+      .substring(0, 50);
+  }
+
+  readFile(filepath) {
+    try {
+      return fs.readFileSync(filepath, 'utf8');
+    } catch (error) {
+      logger.error(`Erro ao ler arquivo: ${error.message}`);
+      return null;
+    }
+  }
+
+  writeFile(filepath, content) {
+    try {
+      fs.writeFileSync(filepath, content, 'utf8');
+      logger.info(`📄 Arquivo salvo: ${filepath}`);
+    } catch (error) {
+      logger.error(`Erro ao escrever arquivo: ${error.message}`);
+    }
+  }
+}
+
+module.exports = new Helpers();
+EOF
+
+echo "✅ src/utils/helpers.js criado"
+
+# 9. Criar src/services/priceExtractor.js
+cat > src/services/priceExtractor.js << 'EOF'
+const logger = require('../utils/logger');
+
+class PriceExtractor {
+  extractPriceFromSnapshot(snapshot) {
+    logger.debug('💰 Extratindo preço do snapshot...');
+    
+    const pricePatterns = [
+      /R\$\s*(\d+[.,]\d{2})/g,
+      /R\$\s*(\d+)/g,
+      /(\d+[.,]\d{2})\s*reais/gi
+    ];
+    
+    for (const pattern of pricePatterns) {
+      const matches = snapshot.match(pattern);
+      if (matches && matches.length > 0) {
+        return matches[0];
+      }
+    }
+    
+    return null;
+  }
+
+  formatSearchResult(resultado) {
+    return {
+      site: resultado.site,
+      produto: resultado.produto,
+      screenshot: resultado.screenshot,
+      timestamp: new Date().toLocaleString('pt-BR')
+    };
+  }
+
+  comparePrices(resultados) {
+    logger.debug('📊 Comparando preços...');
+    
+    if (!resultados || resultados.length === 0) {
+      return null;
+    }
+    
+    const mensagem = resultados
+      .map((r, i) => `${i + 1}️⃣ ${r.site}: R$ (Veja screenshot)`)
+      .join('\n');
+    
+    return mensagem;
+  }
+}
+
+module.exports = new PriceExtractor();
+EOF
+
+echo "✅ src/services/priceExtractor.js criado"
+
+# 10. Criar src/services/messagingService.js
+cat > src/services/messagingService.js << 'EOF'
+const whatsappBot = require('../config/whatsappBot');
+const logger = require('../utils/logger');
+
+class MessagingService {
+  async sendSimpleMessage(chatId, text) {
+    logger.info(`📤 Enviando para ${chatId}: ${text.substring(0, 50)}...`);
+    await whatsappBot.sendMessage(chatId, text);
+  }
+
+  async sendWithScreenshot(chatId, text, screenshotPath) {
+    logger.info(`📤 Enviando com screenshot...`);
+    await whatsappBot.sendMessage(chatId, text);
+    await whatsappBot.sendFile(chatId, screenshotPath, '📸 Resultado da busca');
+  }
+
+  async sendMultipleScreenshots(chatId, texto, screenshots) {
+    logger.info(`📤 Enviando ${screenshots.length} screenshots...`);
+    
+    await whatsappBot.sendMessage(chatId, texto);
+    
+    for (const screenshot of screenshots) {
+      await whatsappBot.sendFile(chatId, screenshot, '📸');
+      
+      await new Promise(resolve => setTimeout(resolve, 1000));
+    }
+  }
+
+  async sendError(chatId, error) {
+    const errorMessage = `❌ Erro ao processar: ${error}\n\nTente novamente mais tarde.`;
+    await whatsappBot.sendMessage(chatId, errorMessage);
+  }
+
+  async sendWaiting(chatId, mensagem = 'Processando sua solicitação...') {
+    const texto = `⏳ ${mensagem}`;
+    await whatsappBot.sendMessage(chatId, texto);
+  }
+}
+
+module.exports = new MessagingService();
+EOF
+
+echo "✅ src/services/messagingService.js criado"
+
+# 11. Criar src/services/scraper.js
+cat > src/services/scraper.js << 'EOF'
+const agentBrowser = require('../config/agentBrowser');
+const logger = require('../utils/logger');
+const helpers = require('../utils/helpers');
+
+class ScraperService {
+  constructor() {
+    this.sessionName = 'scraper-session';
+  }
+
+  async searchMercadoLivre(produto) {
+    logger.info(`🔍 Buscando em Mercado Livre: ${produto}`);
+    
+    try {
+      const url = `https://listado.mercadolivre.com.br/${encodeURIComponent(produto)}`;
+      
+      agentBrowser.openSite(url, this.sessionName);
+      agentBrowser.wait(3000, this.sessionName);
+      
+      const snapshot = agentBrowser.getSnapshot(this.sessionName);
+      
+      const screenshotPath = `screenshots/mercadolivre_${helpers.sanitizeFilename(produto)}.png`;
+      agentBrowser.takeScreenshot(screenshotPath, this.sessionName);
+      
+      agentBrowser.closeBrowser(this.sessionName);
+      
+      return {
+        site: 'Mercado Livre',
+        produto,
+        screenshot: screenshotPath,
+        snapshot: snapshot.substring(0, 500)
+      };
+    } catch (error) {
+      logger.error(`Erro em Mercado Livre: ${error.message}`);
+      return null;
+    }
+  }
+
+  async searchShopee(produto) {
+    logger.info(`🔍 Buscando em Shopee: ${produto}`);
+    
+    try {
+      const url = `https://shopee.com.br/search?keyword=${encodeURIComponent(produto)}`;
+      
+      agentBrowser.openSite(url, this.sessionName);
+      agentBrowser.wait(3000, this.sessionName);
+      
+      const snapshot = agentBrowser.getSnapshot(this.sessionName);
+      
+      const screenshotPath = `screenshots/shopee_${helpers.sanitizeFilename(produto)}.png`;
+      agentBrowser.takeScreenshot(screenshotPath, this.sessionName);
+      
+      agentBrowser.closeBrowser(this.sessionName);
+      
+      return {
+        site: 'Shopee',
+        produto,
+        screenshot: screenshotPath,
+        snapshot: snapshot.substring(0, 500)
+      };
+    } catch (error) {
+      logger.error(`Erro em Shopee: ${error.message}`);
+      return null;
+    }
+  }
+
+  async searchAmazon(produto) {
+    logger.info(`🔍 Buscando em Amazon: ${produto}`);
+    
+    try {
+      const url = `https://www.amazon.com.br/s?k=${encodeURIComponent(produto)}`;
+      
+      agentBrowser.openSite(url, this.sessionName);
+      agentBrowser.wait(3000, this.sessionName);
+      
+      const snapshot = agentBrowser.getSnapshot(this.sessionName);
+      
+      const screenshotPath = `screenshots/amazon_${helpers.sanitizeFilename(produto)}.png`;
+      agentBrowser.takeScreenshot(screenshotPath, this.sessionName);
+      
+      agentBrowser.closeBrowser(this.sessionName);
+      
+      return {
+        site: 'Amazon',
+        produto,
+        screenshot: screenshotPath,
+        snapshot: snapshot.substring(0, 500)
+      };
+    } catch (error) {
+      logger.error(`Erro em Amazon: ${error.message}`);
+      return null;
+    }
+  }
+
+  async searchMultipleSites(produto) {
+    logger.info(`🕷️  Iniciando busca em múltiplos sites: ${produto}`);
+    
+    const resultados = await Promise.all([
+      this.searchMercadoLivre(produto),
+      this.searchShopee(produto),
+      this.searchAmazon(produto)
+    ]);
+    
+    return resultados.filter(r => r !== null);
+  }
+}
+
+module.exports = new ScraperService();
+EOF
+
+echo "✅ src/services/scraper.js criado"
+
+# 12. Criar src/bots/commandHandler.js
+cat > src/bots/commandHandler.js << 'EOF'
+const scraperService = require('../services/scraper');
+const messagingService = require('../services/messagingService');
+const priceExtractor = require('../services/priceExtractor');
+const logger = require('../utils/logger');
+
+class CommandHandler {
+  async handleCommand(message) {
+    const text = message.body.toLowerCase().trim();
+    const sender = message.from;
+    
+    logger.info(`📨 Comando recebido de ${sender}: ${text}`);
+    
+    if (text.startsWith('preço ') || text.startsWith('preco ')) {
+      const produto = text.replace(/^preco\s+|^preço\s+/i, '').trim();
+      await this.handlePriceCommand(sender, produto, message);
+    }
+    
+    else if (text === 'ajuda' || text === 'help') {
+      await this.handleHelpCommand(sender);
+    }
+    
+    else if (text === 'status') {
+      await this.handleStatusCommand(sender, message);
+    }
+    
+    else {
+      await messagingService.sendSimpleMessage(
+        sender,
+        '❓ Comando não reconhecido.\nDigite "ajuda" para ver comandos disponíveis.'
+      );
+    }
+  }
+
+  async handlePriceCommand(chatId, produto, originalMessage) {
+    try {
+      if (!produto || produto.length < 2) {
+        await messagingService.sendSimpleMessage(
+          chatId,
+          '❌ Digite o nome do produto.\nExemplo: preço GPU RTX 4070'
+        );
+        return;
+      }
+      
+      await messagingService.sendWaiting(chatId, `Buscando "${produto}" em 3 lojas...`);
+      
+      logger.info(`🔍 Buscando: ${produto}`);
+      const resultados = await scraperService.searchMultipleSites(produto);
+      
+      if (!resultados || resultados.length === 0) {
+        await messagingService.sendError(chatId, 'Nenhum resultado encontrado');
+        return;
+      }
+      
+      const mensagem = `
+✅ Encontrei "${produto}" em ${resultados.length} loja(s)!
+
+${resultados.map((r, i) => `${i + 1}️⃣ ${r.site}`).join('\n')}
+
+📸 Veja as fotos abaixo para detalhes!
+      `;
+      
+      const screenshots = resultados.map(r => r.screenshot);
+      await messagingService.sendMultipleScreenshots(chatId, mensagem, screenshots);
+      
+    } catch (error) {
+      logger.error(`Erro no comando preço: ${error.message}`);
+      await messagingService.sendError(chatId, error.message);
+    }
+  }
+
+  async handleHelpCommand(chatId) {
+    const ajuda = `
+📋 *COMANDOS DISPONÍVEIS*
+
+🔍 *preço <produto>*
+   Busca preço em múltiplas lojas
+   Exemplo: preço GPU RTX 4070
+
+ℹ️ *status*
+   Verifica se o bot está funcionando
+
+❓ *ajuda*
+   Mostra esta mensagem
+
+---
+💡 Exemplo de uso:
+   Você: "preço SSD 1TB"
+   Bot: Busca em ML, Shopee, Amazon
+   Bot: Envia 3 screenshots com preços
+    `;
+    
+    await messagingService.sendSimpleMessage(chatId, ajuda);
+  }
+
+  async handleStatusCommand(chatId, message) {
+    const status = `
+✅ *BOT ATIVO*
+
+🤖 Status: FUNCIONANDO
+⏰ Horário: ${new Date().toLocaleString('pt-BR')}
+📱 Chat: ${message.from}
+
+Pronto para receber comandos!
+    `;
+    
+    await messagingService.sendSimpleMessage(chatId, status);
+  }
+}
+
+module.exports = new CommandHandler();
+EOF
+
+echo "✅ src/bots/commandHandler.js criado"
+
+# 13. Criar src/index.js
+cat > src/index.js << 'EOF'
+const agentBrowserConfig = require('./config/agentBrowser');
+const whatsappBotConfig = require('./config/whatsappBot');
+const commandHandler = require('./bots/commandHandler');
+const helpers = require('./utils/helpers');
+const logger = require('./utils/logger');
+const config = require('./config/environment');
+
+function printBanner() {
+  console.log(`
+╔═══════════════════════════════════════════════════════╗
+║                                                       ║
+║     🤖 BOT WHATSAPP + AGENT-BROWSER                  ║
+║                                                       ║
+║     Status: INICIANDO...                             ║
+║                                                       ║
+╚═══════════════════════════════════════════════════════╝
+  `);
+}
+
+async function initialize() {
+  printBanner();
+  
+  logger.info('⏳ Inicializando aplicação...');
+  
+  logger.info('📁 Criando estrutura de pastas...');
+  helpers.ensureDir(config.paths.screenshots);
+  helpers.ensureDir(config.paths.logs);
+  
+  logger.info('🔍 Verificando agent-browser...');
+  const agentBrowserOk = agentBrowserConfig.checkInstallation();
+  
+  if (!agentBrowserOk) {
+    logger.error('Instale agent-browser e tente novamente!');
+    process.exit(1);
+  }
+  
+  logger.info('📱 Conectando ao WhatsApp Web...');
+  whatsappBotConfig.initialize();
+  
+  await whatsappBotConfig.waitForReady();
+  
+  logger.info('🎯 Registrando handlers de mensagem...');
+  
+  whatsappBotConfig.client.on('message', async (message) => {
+    try {
+      await commandHandler.handleCommand(message);
+    } catch (error) {
+      logger.error(`Erro ao processar mensagem: ${error.message}`);
+    }
+  });
+  
+  logger.success('✅ Bot totalmente operacional!');
+  
+  console.log(`
+╔═══════════════════════════════════════════════════════╗
+║                                                       ║
+║     ✅ BOT ATIVO E AGUARDANDO MENSAGENS              ║
+║                                                       ║
+║     Tipo "ajuda" no WhatsApp para ver comandos       ║
+║                                                       ║
+╚═══════════════════════════════════════════════════════╝
+  `);
+}
+
+process.on('unhandledRejection', (error) => {
+  logger.error(`❌ Erro não capturado: ${error.message}`);
+});
+
+process.on('SIGINT', () => {
+  logger.warn('⚠️  Encerrando bot...');
+  if (whatsappBotConfig.client) {
+    whatsappBotConfig.client.destroy();
+  }
+  process.exit(0);
+});
+
+initialize().catch(error => {
+  logger.error(`Erro na inicialização: ${error.message}`);
+  process.exit(1);
+});
+EOF
+
+echo "✅ src/index.js criado"
+
+# 14. Criar README.md
+cat > README.md << 'EOF'
+# 🤖 Bot WhatsApp + Agent-Browser
+
+Bot automático que busca preços em múltiplas lojas via WhatsApp Web.
+
+## 📋 Requisitos
+
+- Node.js 16+
+- npm
+- agent-browser instalado globalmente
+
+## 🚀 Instalação
+
+### 1. Instalar Agent-Browser Globalmente
+
+```bash
+npm install -g agent-browser
+2. Instalar Dependências do Projeto
+bash
+npm install
+3. Configurar .env
+Já vem pré-configurado, mas você pode editar se necessário.
+
+▶️ Como Usar
+1. Iniciar o Bot
+bash
+npm start
+2. Escanear QR Code
+Quando o QR code aparecer no terminal, escaneie com seu WhatsApp.
+
+3. Enviar Comandos
+No WhatsApp, digite:
+
+preço GPU RTX 4070 - Busca em múltiplas lojas
+
+ajuda - Mostra comandos disponíveis
+
+status - Verifica status do bot
+
+📁 Estrutura
+text
+src/
+├── config/         - Configurações
+├── services/       - Serviços de scraping
+├── bots/          - Handlers de bot
+├── utils/         - Utilitários
+└── index.js       - Arquivo principal
+
+screenshots/       - Screenshots capturados
+logs/             - Logs da aplicação
+⚙️ Configuração
+Edite .env para customizar:
+
+text
+AGENT_BROWSER_TIMEOUT=10000
+WHATSAPP_SESSION_NAME=bot-session
+NODE_ENV=development
+LOG_LEVEL=info
+🛠️ Desenvolvimento
+Estrutura pronta para adicionar:
+
+Mais sites de busca
+
+Extração automática de preços
+
+Histórico de preços
+
+Alertas de preço
+
+Integração com BD
+
+📝 Logs
+Todos os logs são exibidos no console com timestamps.
+
+Formato: [HH:MM:SS] [LEVEL] mensagem
+
+⚠️ Limitações Conhecidas
+Requer WhatsApp Web
+
+Agent-browser precisa de Chromium
+
+Velocidade depende da conexão internet
+
+🔒 Segurança
+Não armazena senhas
+
+Session armazenada localmente
+
+Sem dados enviados para servidores
+
+Desenvolvido com ❤️ para Fábio | 2026
+EOF
+
+echo "✅ README.md criado"
+
+============================================
+FIM DO SCRIPT
+============================================
+echo ""
+echo "╔═══════════════════════════════════════════════════════╗"
+echo "║ ║"
+echo "║ ✅ TODOS OS ARQUIVOS FORAM CRIADOS! ║"
+echo "║ ║"
+echo "║ Próximo passo: ║"
+echo "║ $ npm start ║"
+echo "║ ║"
+echo "╚═══════════════════════════════════════════════════════╝"
+echo ""
+
+Listar arquivos criados
+echo "📁 Arquivos criados:"
+find . -type f -name "*.js" -o -name ".env" -o -name ".gitignore" -o -name "README.md" -o -name "package.json" | grep -v node_modules | sort
+
+echo ""
+echo "✅ Estrutura pronta para iniciar!"
+
+text
+
+***
+
+## 🎯 Como Usar Este Prompt
+
+### No Git Bash do VS Code:
+
+1. **Copie TODO o script acima** (com os 3 backticks)
+2. **Cole no Git Bash**
+3. **Pressione Enter**
+4. Espere terminar (vai criar todos os 14 arquivos de uma vez!)
+5. Execute: `npm start`
+
+***
+
+## ✅ Resultado
+
+Ao final, você terá:
+- ✅ 14 arquivos criados
+- ✅ Toda estrutura pronta
+- ✅ Dependências instaladas
+- ✅ Configuração completa
+
+Depois é só fazer:
+
+```bash
+npm start

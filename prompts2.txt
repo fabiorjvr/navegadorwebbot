@@ -1,0 +1,763 @@
+Vi! O agent-browser está instalado (0.6.0), mas o wrapper .cmd não existe no Windows.
+
+Isso é um bug do agent-browser no Windows.
+
+✅ Solução: Usar Node.js Direto
+Vamos contornar isto usando child_process com shell adequado:
+
+Substitua TODO o arquivo src/config/agentBrowser.js por isto:
+
+javascript
+const { spawn, spawnSync } = require('child_process');
+const path = require('path');
+const config = require('./environment');
+const logger = require('../utils/logger');
+
+class AgentBrowserConfig {
+  constructor() {
+    this.timeout = config.agentBrowser.timeout;
+    this.sessions = {};
+  }
+
+  checkInstallation() {
+    try {
+      const result = spawnSync('npm', ['list', '-g', 'agent-browser'], {
+        encoding: 'utf8',
+        shell: true
+      });
+
+      if (result.stdout.includes('agent-browser')) {
+        logger.info(`✅ agent-browser instalado`);
+        return true;
+      } else {
+        logger.error('❌ agent-browser não encontrado!');
+        return false;
+      }
+    } catch (error) {
+      logger.error(`❌ Erro ao verificar: ${error.message}`);
+      return false;
+    }
+  }
+
+  executeCommand(commandArgs, sessionName = 'default') {
+    try {
+      let args = Array.isArray(commandArgs) ? commandArgs : [commandArgs];
+
+      if (sessionName && sessionName !== 'default') {
+        args.push(`--session=${sessionName}`);
+      }
+
+      logger.debug(`⚡ Executando: agent-browser ${args.join(' ')}`);
+
+      const result = spawnSync('npx', ['agent-browser', ...args], {
+        encoding: 'utf8',
+        shell: true,
+        timeout: this.timeout,
+        stdio: ['pipe', 'pipe', 'pipe']
+      });
+
+      if (result.error) {
+        throw result.error;
+      }
+
+      if (result.status !== 0 && result.stderr) {
+        logger.error(`❌ Erro: ${result.stderr}`);
+        throw new Error(result.stderr);
+      }
+
+      return (result.stdout || '').trim();
+    } catch (error) {
+      logger.error(`❌ Erro ao executar: ${error.message}`);
+      throw error;
+    }
+  }
+
+  openSite(url, sessionName = 'default') {
+    logger.info(`🌐 Abrindo: ${url}`);
+    return this.executeCommand(['open', url], sessionName);
+  }
+
+  takeScreenshot(filename, sessionName = 'default') {
+    logger.info(`📸 Capturando: ${filename}`);
+    return this.executeCommand(['screenshot', filename], sessionName);
+  }
+
+  getSnapshot(sessionName = 'default') {
+    logger.debug('📋 Obtendo snapshot...');
+    return this.executeCommand(['snapshot', '-i'], sessionName);
+  }
+
+  typeText(inputRef, text, sessionName = 'default') {
+    logger.info(`✍️  Digitando em ${inputRef}: ${text.substring(0, 50)}...`);
+    return this.executeCommand(['type', inputRef, text], sessionName);
+  }
+
+  clickElement(ref, sessionName = 'default') {
+    logger.info(`🖱️  Clicando em: ${ref}`);
+    return this.executeCommand(['click', ref], sessionName);
+  }
+
+  pressKey(key, sessionName = 'default') {
+    logger.info(`⌨️  Pressionando: ${key}`);
+    return this.executeCommand(['key', key], sessionName);
+  }
+
+  closeBrowser(sessionName = 'default') {
+    logger.info(`🔴 Fechando navegador: ${sessionName}`);
+    return this.executeCommand(['close'], sessionName);
+  }
+
+  wait(ms, sessionName = 'default') {
+    logger.debug(`⏳ Aguardando ${ms}ms...`);
+    return this.executeCommand(['wait', ms], sessionName);
+  }
+}
+
+module.exports = new AgentBrowserConfig();
+🎯 O Que Mudou
+Antes	Depois
+execSync (string)	spawnSync (array)
+Problemas com PATH	Usa npx direto
+Falha no Windows	Funciona em todos SO
+String única	Array de argumentos
+🔧 Por Que Funciona Agora
+javascript
+spawnSync('npx', ['agent-browser', 'open', url], {
+  shell: true
+})
+
+// Equivalente ao comando:
+// npx agent-browser open "url"
+
+// Mas é mais robusto no Windows!
+✅ Teste Agora
+Abra o arquivo src/config/agentBrowser.js
+
+Substitua TUDO pelo código acima
+
+Salve (Ctrl+S)
+
+No Git Bash, execute:
+
+bash
+npm start
+📊 Resultado Esperado
+text
+✅ agent-browser instalado
+🔄 Inicializando WhatsApp Bot...
+📱 QR CODE GERADO - Escaneie com seu telefone:
+[mostra QR code]
+
+Installation
+npm (recommended)
+
+npm install -g agent-browser
+agent-browser install  # Download Chromium
+From source
+
+git clone https://github.com/vercel-labs/agent-browser
+cd agent-browser
+pnpm install
+pnpm build
+pnpm build:native
+./bin/agent-browser install
+pnpm link --global
+
+Quick Start
+Basic workflow
+
+agent-browser open example.com
+agent-browser snapshot                    # Get accessibility tree with refs
+agent-browser click @e2                   # Click by ref from snapshot
+agent-browser fill @e3 "test@example.com" # Fill by ref
+agent-browser get text @e1                # Get text by ref
+agent-browser screenshot                  # Base64 png to stdout
+agent-browser screenshot page.png         # Save to file
+agent-browser close
+Traditional selectors
+CSS selectors and semantic locators also supported:
+
+
+agent-browser click "#submit"
+agent-browser fill "#email" "test@example.com"
+agent-browser find role button click --name "Submit"
+AI workflow
+Optimal workflow for AI agents:
+
+
+# 1. Navigate and get snapshot
+agent-browser open example.com
+agent-browser snapshot -i --json   # AI parses tree and refs
+
+# 2. AI identifies target refs from snapshot
+# 3. Execute actions using refs
+agent-browser click @e2
+agent-browser fill @e3 "input text"
+
+# 4. Get new snapshot if page changed
+agent-browser snapshot -i --json
+Headed mode
+Show browser window for debugging:
+
+
+agent-browser open example.com --headed
+JSON output
+Use --json for machine-readable output:
+
+
+agent-browser snapshot --json
+agent-browser get text @e1 --json
+agent-browser is visible @e2 --json
+
+Commands
+Core
+
+agent-browser open <url>              # Navigate (aliases: goto, navigate)
+agent-browser click <sel>             # Click element
+agent-browser dblclick <sel>          # Double-click
+agent-browser fill <sel> <text>       # Clear and fill
+agent-browser type <sel> <text>       # Type into element
+agent-browser press <key>             # Press key (Enter, Tab, Control+a)
+agent-browser hover <sel>             # Hover element
+agent-browser select <sel> <val>      # Select dropdown option
+agent-browser check <sel>             # Check checkbox
+agent-browser uncheck <sel>           # Uncheck checkbox
+agent-browser scroll <dir> [px]       # Scroll (up/down/left/right)
+agent-browser screenshot [path]       # Screenshot (--full for full page)
+agent-browser snapshot                # Accessibility tree with refs
+agent-browser eval <js>               # Run JavaScript
+agent-browser close                   # Close browser
+Get info
+
+agent-browser get text <sel>          # Get text content
+agent-browser get html <sel>          # Get innerHTML
+agent-browser get value <sel>         # Get input value
+agent-browser get attr <sel> <attr>   # Get attribute
+agent-browser get title               # Get page title
+agent-browser get url                 # Get current URL
+agent-browser get count <sel>         # Count matching elements
+agent-browser get box <sel>           # Get bounding box
+Check state
+
+agent-browser is visible <sel>        # Check if visible
+agent-browser is enabled <sel>        # Check if enabled
+agent-browser is checked <sel>        # Check if checked
+Find elements
+Semantic locators with actions (click, fill, check, hover, text):
+
+
+agent-browser find role <role> <action> [value]
+agent-browser find text <text> <action>
+agent-browser find label <label> <action> [value]
+agent-browser find placeholder <ph> <action> [value]
+agent-browser find testid <id> <action> [value]
+agent-browser find first <sel> <action> [value]
+agent-browser find nth <n> <sel> <action> [value]
+Examples:
+
+
+agent-browser find role button click --name "Submit"
+agent-browser find label "Email" fill "test@test.com"
+agent-browser find first ".item" click
+Wait
+
+agent-browser wait <selector>         # Wait for element
+agent-browser wait <ms>               # Wait for time
+agent-browser wait --text "Welcome"   # Wait for text
+agent-browser wait --url "**/dash"    # Wait for URL pattern
+agent-browser wait --load networkidle # Wait for load state
+agent-browser wait --fn "condition"   # Wait for JS condition
+Mouse
+
+agent-browser mouse move <x> <y>      # Move mouse
+agent-browser mouse down [button]     # Press button
+agent-browser mouse up [button]       # Release button
+agent-browser mouse wheel <dy> [dx]   # Scroll wheel
+Settings
+
+agent-browser set viewport <w> <h>    # Set viewport size
+agent-browser set device <name>       # Emulate device ("iPhone 14")
+agent-browser set geo <lat> <lng>     # Set geolocation
+agent-browser set offline [on|off]    # Toggle offline mode
+agent-browser set headers <json>      # Extra HTTP headers
+agent-browser set credentials <u> <p> # HTTP basic auth
+agent-browser set media [dark|light]  # Emulate color scheme
+Cookies & storage
+
+agent-browser cookies                 # Get all cookies
+agent-browser cookies set <name> <val> # Set cookie
+agent-browser cookies clear           # Clear cookies
+
+agent-browser storage local           # Get all localStorage
+agent-browser storage local <key>     # Get specific key
+agent-browser storage local set <k> <v>  # Set value
+agent-browser storage local clear     # Clear all
+
+agent-browser storage session         # Same for sessionStorage
+Network
+
+agent-browser network route <url>              # Intercept requests
+agent-browser network route <url> --abort      # Block requests
+agent-browser network route <url> --body <json>  # Mock response
+agent-browser network unroute [url]            # Remove routes
+agent-browser network requests                 # View tracked requests
+Tabs & frames
+
+agent-browser tab                     # List tabs
+agent-browser tab new [url]           # New tab
+agent-browser tab <n>                 # Switch to tab
+agent-browser tab close [n]           # Close tab
+agent-browser frame <sel>             # Switch to iframe
+agent-browser frame main              # Back to main frame
+Debug
+
+agent-browser trace start [path]      # Start trace
+agent-browser trace stop [path]       # Stop and save trace
+agent-browser console                 # View console messages
+agent-browser errors                  # View page errors
+agent-browser highlight <sel>         # Highlight element
+agent-browser state save <path>       # Save auth state
+agent-browser state load <path>       # Load auth state
+Navigation
+
+agent-browser back                    # Go back
+agent-browser forward                 # Go forward
+agent-browser reload                  # Reload page
+
+Selectors
+Refs (recommended)
+Refs provide deterministic element selection from snapshots. Best for AI agents.
+
+
+# 1. Get snapshot with refs
+agent-browser snapshot
+# Output:
+# - heading "Example Domain" [ref=e1] [level=1]
+# - button "Submit" [ref=e2]
+# - textbox "Email" [ref=e3]
+# - link "Learn more" [ref=e4]
+
+# 2. Use refs to interact
+agent-browser click @e2                   # Click the button
+agent-browser fill @e3 "test@example.com" # Fill the textbox
+agent-browser get text @e1                # Get heading text
+agent-browser hover @e4                   # Hover the link
+Why refs?
+Deterministic - Ref points to exact element from snapshot
+Fast - No DOM re-query needed
+AI-friendly - LLMs can reliably parse and use refs
+CSS selectors
+
+agent-browser click "#id"
+agent-browser click ".class"
+agent-browser click "div > button"
+agent-browser click "[data-testid='submit']"
+Text & XPath
+
+agent-browser click "text=Submit"
+agent-browser click "xpath=//button[@type='submit']"
+Semantic locators
+Find elements by role, label, or other semantic properties:
+
+
+agent-browser find role button click --name "Submit"
+agent-browser find label "Email" fill "test@test.com"
+agent-browser find placeholder "Search..." fill "query"
+agent-browser find testid "submit-btn" click
+
+Sessions
+Run multiple isolated browser instances:
+
+
+# Different sessions
+agent-browser --session agent1 open site-a.com
+agent-browser --session agent2 open site-b.com
+
+# Or via environment variable
+AGENT_BROWSER_SESSION=agent1 agent-browser click "#btn"
+
+# List active sessions
+agent-browser session list
+# Output:
+# Active sessions:
+# -> default
+#    agent1
+
+# Show current session
+agent-browser session
+Session isolation
+Each session has its own:
+
+Browser instance
+Cookies and storage
+Navigation history
+Authentication state
+Authenticated sessions
+Use --headers to set HTTP headers for a specific origin:
+
+
+# Headers scoped to api.example.com only
+agent-browser open api.example.com --headers '{"Authorization": "Bearer <token>"}'
+
+# Requests to api.example.com include the auth header
+agent-browser snapshot -i --json
+agent-browser click @e2
+
+# Navigate to another domain - headers NOT sent
+agent-browser open other-site.com
+Useful for:
+
+Skipping login flows - Authenticate via headers
+Switching users - Different auth tokens per session
+API testing - Access protected endpoints
+Security - Headers scoped to origin, not leaked
+Multiple origins
+
+agent-browser open api.example.com --headers '{"Authorization": "Bearer token1"}'
+agent-browser open api.acme.com --headers '{"Authorization": "Bearer token2"}'
+Global headers
+For headers on all domains:
+
+
+agent-browser set headers '{"X-Custom-Header": "value"}'
+
+Snapshots
+The snapshot command returns the accessibility tree with refs for AI-friendly interaction.
+
+Options
+Filter output to reduce size:
+
+
+agent-browser snapshot                    # Full accessibility tree
+agent-browser snapshot -i                 # Interactive elements only
+agent-browser snapshot -c                 # Compact (remove empty elements)
+agent-browser snapshot -d 3               # Limit depth to 3 levels
+agent-browser snapshot -s "#main"         # Scope to CSS selector
+agent-browser snapshot -i -c -d 5         # Combine options
+Option	Description
+-i, --interactive	Only interactive elements (buttons, links, inputs)
+-c, --compact	Remove empty structural elements
+-d, --depth	Limit tree depth
+-s, --selector	Scope to CSS selector
+Output format
+
+agent-browser snapshot
+# Output:
+# - heading "Example Domain" [ref=e1] [level=1]
+# - button "Submit" [ref=e2]
+# - textbox "Email" [ref=e3]
+# - link "Learn more" [ref=e4]
+JSON output
+Use --json for machine-readable output:
+
+
+agent-browser snapshot --json
+# {"success":true,"data":{"snapshot":"...","refs":{"e1":{"role":"heading","name":"Title"},...}}}
+Best practices
+Use -i to reduce output to actionable elements
+Use --json for structured parsing
+Re-snapshot after page changes to get updated refs
+Scope with -s for specific page sections
+
+Streaming
+Stream the browser viewport via WebSocket for live preview or "pair browsing" where a human can watch and interact alongside an AI agent.
+
+Enable streaming
+Set the AGENT_BROWSER_STREAM_PORT environment variable to start a WebSocket server:
+
+
+AGENT_BROWSER_STREAM_PORT=9223 agent-browser open example.com
+The server streams viewport frames and accepts input events (mouse, keyboard, touch).
+
+WebSocket protocol
+Connect to ws://localhost:9223 to receive frames and send input.
+
+Frame messages
+The server sends frame messages with base64-encoded images:
+
+
+{
+  "type": "frame",
+  "data": "<base64-encoded-jpeg>",
+  "metadata": {
+    "deviceWidth": 1280,
+    "deviceHeight": 720,
+    "pageScaleFactor": 1,
+    "offsetTop": 0,
+    "scrollOffsetX": 0,
+    "scrollOffsetY": 0
+  }
+}
+Status messages
+Connection and screencast status:
+
+
+{
+  "type": "status",
+  "connected": true,
+  "screencasting": true,
+  "viewportWidth": 1280,
+  "viewportHeight": 720
+}
+Input injection
+Send input events to control the browser remotely.
+
+Mouse events
+
+// Click
+{
+  "type": "input_mouse",
+  "eventType": "mousePressed",
+  "x": 100,
+  "y": 200,
+  "button": "left",
+  "clickCount": 1
+}
+
+// Release
+{
+  "type": "input_mouse",
+  "eventType": "mouseReleased",
+  "x": 100,
+  "y": 200,
+  "button": "left"
+}
+
+// Move
+{
+  "type": "input_mouse",
+  "eventType": "mouseMoved",
+  "x": 150,
+  "y": 250
+}
+
+// Scroll
+{
+  "type": "input_mouse",
+  "eventType": "mouseWheel",
+  "x": 100,
+  "y": 200,
+  "deltaX": 0,
+  "deltaY": 100
+}
+Keyboard events
+
+// Key down
+{
+  "type": "input_keyboard",
+  "eventType": "keyDown",
+  "key": "Enter",
+  "code": "Enter"
+}
+
+// Key up
+{
+  "type": "input_keyboard",
+  "eventType": "keyUp",
+  "key": "Enter",
+  "code": "Enter"
+}
+
+// Type character
+{
+  "type": "input_keyboard",
+  "eventType": "char",
+  "text": "a"
+}
+
+// With modifiers (1=Alt, 2=Ctrl, 4=Meta, 8=Shift)
+{
+  "type": "input_keyboard",
+  "eventType": "keyDown",
+  "key": "c",
+  "code": "KeyC",
+  "modifiers": 2
+}
+Touch events
+
+// Touch start
+{
+  "type": "input_touch",
+  "eventType": "touchStart",
+  "touchPoints": [{ "x": 100, "y": 200 }]
+}
+
+// Touch move
+{
+  "type": "input_touch",
+  "eventType": "touchMove",
+  "touchPoints": [{ "x": 150, "y": 250 }]
+}
+
+// Touch end
+{
+  "type": "input_touch",
+  "eventType": "touchEnd",
+  "touchPoints": []
+}
+
+// Multi-touch (pinch zoom)
+{
+  "type": "input_touch",
+  "eventType": "touchStart",
+  "touchPoints": [
+    { "x": 100, "y": 200, "id": 0 },
+    { "x": 200, "y": 200, "id": 1 }
+  ]
+}
+Programmatic API
+For advanced use, control streaming directly via the TypeScript API:
+
+
+import { BrowserManager } from 'agent-browser';
+
+const browser = new BrowserManager();
+await browser.launch({ headless: true });
+await browser.navigate('https://example.com');
+
+// Start screencast with callback
+await browser.startScreencast((frame) => {
+  console.log('Frame:', frame.metadata.deviceWidth, 'x', frame.metadata.deviceHeight);
+  // frame.data is base64-encoded image
+}, {
+  format: 'jpeg',  // or 'png'
+  quality: 80,     // 0-100, jpeg only
+  maxWidth: 1280,
+  maxHeight: 720,
+  everyNthFrame: 1
+});
+
+// Inject mouse event
+await browser.injectMouseEvent({
+  type: 'mousePressed',
+  x: 100,
+  y: 200,
+  button: 'left',
+  clickCount: 1
+});
+
+// Inject keyboard event
+await browser.injectKeyboardEvent({
+  type: 'keyDown',
+  key: 'Enter',
+  code: 'Enter'
+});
+
+// Inject touch event
+await browser.injectTouchEvent({
+  type: 'touchStart',
+  touchPoints: [{ x: 100, y: 200 }]
+});
+
+// Check if screencasting
+console.log('Active:', browser.isScreencasting());
+
+// Stop screencast
+await browser.stopScreencast();
+Use cases
+Pair browsing - Human watches and assists AI agent in real-time
+Remote preview - View browser output in a separate UI
+Recording - Capture frames for video generation
+Mobile testing - Inject touch events for mobile emulation
+Accessibility testing - Manual interaction during automated tests
+
+Agent Mode
+agent-browser works with any AI coding agent. Use --json for machine-readable output.
+
+Compatible agents
+Claude Code
+Cursor
+GitHub Copilot
+OpenAI Codex
+Google Gemini
+opencode
+Any agent that can run shell commands
+JSON output
+
+agent-browser snapshot --json
+# {"success":true,"data":{"snapshot":"...","refs":{...}}}
+
+agent-browser get text @e1 --json
+agent-browser is visible @e2 --json
+Optimal workflow
+
+# 1. Navigate and get snapshot
+agent-browser open example.com
+agent-browser snapshot -i --json   # AI parses tree and refs
+
+# 2. AI identifies target refs from snapshot
+# 3. Execute actions using refs
+agent-browser click @e2
+agent-browser fill @e3 "input text"
+
+# 4. Get new snapshot if page changed
+agent-browser snapshot -i --json
+Integration
+Just ask
+The simplest approach:
+
+
+Use agent-browser to test the login flow. Run agent-browser --help to see available commands.
+The --help output is comprehensive.
+
+AGENTS.md / CLAUDE.md
+For consistent results, add to your instructions file:
+
+
+## Browser Automation
+
+Use `agent-browser` for web automation. Run `agent-browser --help` for all commands.
+
+Core workflow:
+1. `agent-browser open <url>` - Navigate to page
+2. `agent-browser snapshot -i` - Get interactive elements with refs (@e1, @e2)
+3. `agent-browser click @e1` / `fill @e2 "text"` - Interact using refs
+4. Re-snapshot after page changes
+Claude Code skill
+For richer context:
+
+
+cp -r node_modules/agent-browser/skills/agent-browser .claude/skills/
+Or download:
+
+
+mkdir -p .claude/skills/agent-browser
+curl -o .claude/skills/agent-browser/SKILL.md \
+  https://raw.githubusercontent.com/vercel-labs/agent-browser/main/skills/agent-browse
+
+  CDP Mode
+Connect to an existing browser via Chrome DevTools Protocol:
+
+
+# Start Chrome with: google-chrome --remote-debugging-port=9222
+
+# Connect once, then run commands without --cdp
+agent-browser connect 9222
+agent-browser snapshot
+agent-browser tab
+agent-browser close
+
+# Or pass --cdp on each command
+agent-browser --cdp 9222 snapshot
+Use cases
+This enables control of:
+
+Electron apps
+Chrome/Chromium with remote debugging
+WebView2 applications
+Any browser exposing a CDP endpoint
+Global options
+Option	Description
+--session <name>	Use isolated session
+--headers <json>	HTTP headers scoped to origin
+--executable-path	Custom browser executable
+--json	JSON output for agents
+--full, -f	Full page screenshot
+--name, -n	Locator name filter
+--exact	Exact text match
+--headed	Show browser window
+--cdp <port>	CDP connection port
+--debug	Debug output
+
+
+https://github.com/vercel-labs/agent-browser

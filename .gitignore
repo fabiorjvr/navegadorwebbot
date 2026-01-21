@@ -1,0 +1,17 @@
+node_modules/
+.env
+.env.local
+*.png
+*.jpg
+session.json
+*.log
+logs/
+screenshots/
+.DS_Store
+package-lock.json
+.wwebjs_auth/
+bot_output.log
+qrcode.png
+.sisyphus/
+DICAS/
+MANUALOPENCODE/
